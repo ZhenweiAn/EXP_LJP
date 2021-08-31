@@ -13,7 +13,11 @@ class Lawformer_Model(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.model = AutoModel.from_pretrained(config.lawformer_model_path)
+        if config.model_name == 'lawformer':
+            self.model = AutoModel.from_pretrained(config.lawformer_model_path)
+        else:
+            self.model = BertModel.from_pretrained(config.bert_model_path)
+
         self.linear = nn.Linear(config.bert_hidden_size,self.config.label_num)
         self.loss_function = nn.CrossEntropyLoss()
 
@@ -40,12 +44,7 @@ class Lawformer_Model(nn.Module):
 
 
     def forward(self,ids,mask,label=None,mode='train'):
-        if self.config.elements_feature == 'all_layers':
-            encoded_tensor, _, hidden_states = self.model(ids,attention_mask=mask,output_hidden_states=True)[0:3]
-        elif self.config.elements_feature == 'last_layer':
-            encoded_tensor, _, hidden_states = self.model(ids,attention_mask=mask,output_hidden_states=True)[0:3]
-
-        
+        encoded_tensor, _, hidden_states = self.model(ids,attention_mask=mask,output_hidden_states=True)[0:3]
         CLS_tensor = encoded_tensor[:,0,:]
         Feature = self.Attention(CLS_tensor, encoded_tensor[:,1:,:],mask[:,1:])
         predict = self.linear(Feature)

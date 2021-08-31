@@ -15,6 +15,7 @@ from model import Lawformer_Model
 from data import Data
 from tqdm import tqdm
 import random
+from utils import metrics, F1_each_Label
 
 def isNaN(a):
     return a != a
@@ -38,7 +39,11 @@ class Label_Infer():
         self.model = Lawformer_Model(config)
         self.model = nn.DataParallel(self.model)
         print('start loading')
-        self.model.load_state_dict(torch.load('../models/2021-08-20-17:15:21.bin'))
+        if config.model_name == 'lawformer':
+            self.model.load_state_dict(torch.load('../models/2021-08-20-17:15:21.bin'))
+        else:
+            self.model.load_state_dict(torch.load('../models/wwm_bert.bin'))
+
         self.model = self.model.cuda()
         print('end loading')
         self.Processor = Data(config,config)
@@ -140,16 +145,22 @@ def pre_process(config):
     exp_sent_num = len(Tensor_List)
     train_index = int(0.8 * exp_sent_num)
     print(exp_sent_num)
-    with open('../data/ALL_CRIME_lawformer_exp_train.json','w',encoding='utf-8') as f:
+    train_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_train.json'
+    test_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_test.json'
+    
+    with open(train_file_path,'w',encoding='utf-8') as f:
         json.dump([Tensor_List[:train_index],Label_List[:train_index], Crim_List[:train_index]],f,indent=4,ensure_ascii=False)
-    with open('../data/ALL_CRIME_lawformer_exp_test.json','w',encoding='utf-8') as f:
+    with open(test_file_path,'w',encoding='utf-8') as f:
         json.dump([Tensor_List[train_index:],Label_List[train_index:], Crim_List[train_index:]],f,indent=4,ensure_ascii=False)
 
 def exp_train(config):
-    
-    with open('../data/ALL_CRIME_wwmbert_exp_train.json','r',encoding='utf-8') as f:
+    train_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_train.json'
+    test_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_test.json'
+    out_model_path =  '../models/' + config.model_name + '_' + config.elements_feature + '_exp_model.bin'
+    print(train_file_path)
+    with open(train_file_path,'r',encoding='utf-8') as f:
         train_data = json.load(f)
-    with open('../data/ALL_CRIME_wwmbert_exp_test.json','r',encoding='utf-8') as f:
+    with open(test_file_path,'r',encoding='utf-8') as f:
         test_data = json.load(f)
     trainset = Exp_Dataset(*train_data)
     testset = Exp_Dataset(*test_data)
@@ -203,6 +214,7 @@ def exp_train(config):
         if mi_f1 > best_valid_mif1:
             best_model_state_dict = deepcopy(Model.state_dict())
             best_valid_mif1 = mi_f1
+            torch.save(Model.state_dict(), out_model_path)
             #torch.save(Model.state_dict(), '../models/exp_model.bin')
         
     mi_f1  = exp_evaluate_multi_label(Model, data_loader['test'],config)
@@ -214,38 +226,6 @@ def exp_train(config):
                 t = param[:,start:end].norm()
                 print(i, ' ', t)
         #print(name,' ', param.size())
-
-'''计算每一类的F1
-    输入的golden_labels和predict_score为pytorch tensor;
-    size为 case_num * class_num；
-    threshold为预测阈值，某个标签的预测分数超过这个阈值就认为具有该标签'''
-def F1_each_focus(golden_labels, predict_labels):
-    golden_labels = golden_labels.T
-    predict_labels = predict_labels.T
-    f1_s = []
-    for i in range(len(golden_labels)):
-        f1 = f1_score(golden_labels[i], predict_labels[i])
-        f1_s.append(f1)
-    element_dict = ["主体","行为","主观","结果"]
-    print(" Element F1 score: ")
-    for i in range(len(f1_s)):
-        t = classification_report(golden_labels[i], predict_labels[i])[:-3]
-        print(element_dict[i] + ': ' + str(f1_s[i]))
-        print(t)
-    return f1_s
-
-def metrics(golden_labels, predict_labels, name='罪名'):
-    golden_labels = np.array(golden_labels)
-    predict_labels = np.array(predict_labels)
-    mi_f1 = f1_score(golden_labels,predict_labels, average='micro')
-    ma_f1 = f1_score(golden_labels,predict_labels, average='macro')
-    print('------',name,'------')
-    print("mi_f1: ",mi_f1)
-    print("ma_f1: ",ma_f1)
-
-    #F1_each_focus(golden_labels,predict_labels)
-  
-    return mi_f1
 
 def exp_evaluate_multi_label(model, data_loader,config):
     with open('../data/crit_dict.json', 'r', encoding='utf-8') as f:
@@ -285,5 +265,5 @@ if __name__ == "__main__":
     torch.manual_seed(37)
     pre_process(config)
     
-    #exp_train(config)
+    exp_train(config)
 

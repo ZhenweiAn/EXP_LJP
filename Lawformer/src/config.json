@@ -3,7 +3,9 @@
     "label_num":193,
     "max_para_length":512,
     "fold_num":5,
+    "model_name": "bert",
     "lawformer_model_path":"../../../RESOURCE/lawformer",
+    "bert_model_path":"../../../RESOURCE/chinese_wwm_ext_pytorch",
     "vocab_path":"../../../RESOURCE/chinese_wwm_ext_pytorch/vocab.txt",
     "bert_hidden_size":768,
     "batch_size":16,
@@ -15,5 +17,5 @@
     "max_grad_norm":1e-3,
     "pooling":"mean",
     "threshold":0.5,
-    "elements_feature":"all_layers"
+    "elements_feature":"last_layer"
 }
