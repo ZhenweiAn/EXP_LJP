@@ -2,6 +2,7 @@ import os
 import json
 import argparse
 import pickle as pkl
+import token
 from types import SimpleNamespace
 from tqdm import tqdm
 from collections import defaultdict
@@ -15,7 +16,7 @@ class Data:
         self.crit_dict = crit_dict
 
     def convert_text2id_infer(self,text,sub_sent_pos):
-        tokens = []
+        tokens = ['[CLS]']
         tokens_sent_pos = []
         for sentence in sub_sent_pos:
             start = sentence[0]
@@ -26,8 +27,8 @@ class Data:
             if len(text) > end + 1:
                 tokens += self.tokenizer.tokenize(text[end+1])
             tokens_sent_pos.append([newstart,newend])
-        tokens = self.tokenizer.tokenize(text)
-        tokens = ['CLS'] + tokens
+        #tokens = self.tokenizer.tokenize(text)
+        #tokens = ['[CLS]'] + tokens
         length = len(tokens)
         if length > 512:
             tokens = tokens[:512]
@@ -39,7 +40,7 @@ class Data:
         
     def convert_text2id(self,text):
         tokens = self.tokenizer.tokenize(text)
-        tokens = ['CLS'] + tokens
+        tokens = ['[CLS]'] + tokens
         if len(tokens) >= self.config.max_para_length:
             tokens = tokens[:self.config.max_para_length]
             length = self.config.max_para_length
@@ -51,10 +52,13 @@ class Data:
         return ids,mask
 
 def Process(config,crit_dict):
-    file_list = ['../../Raw_Data/ALL_CRIME_train.json','../../Raw_Data/ALL_CRIME_test.json', '../../Raw_Data/ALL_CRIME_valid.json']
+    if config.data_src == "7_CRIME":
+        file_list = ['../../Raw_Data/7_CRIME_train.json','../../Raw_Data/7_CRIME_test.json', '../../Raw_Data/7_CRIME_valid.json']
+    else:
+        file_list = ['../../Raw_Data/ALL_CRIME_train.json','../../Raw_Data/ALL_CRIME_test.json', '../../Raw_Data/ALL_CRIME_valid.json']
     Processor = Data(config,crit_dict)
     for file_path in file_list:
-        mode = file_path.split('/')[-1].split('.')[0]
+        mode = file_path.split('/')[-1].split('.')[0].split('_')[-1]
         ID_List = []
         Mask_List = []
         Label_List = []
@@ -75,14 +79,23 @@ def Process(config,crit_dict):
                 ID_List.append(ids)
                 Mask_List.append(mask)
                 Label_List.append(Label)
-        of_path = '../data/ALL_CRIME_' + mode + '.json'
+        if config.data_src == "7_CRIME":
+            of_path = '../data/7_CRIME_' + mode + '.json'
+        else:
+            of_path = '../data/ALL_CRIME_' + mode + '.json'        
         with open(of_path,'w',encoding='utf-8') as f:
             json.dump((ID_List, Mask_List, Label_List),f,indent=4)
     print(len(ID_List))
 
 def main(config):
-    with open('../data/ALL_CRIME_crit_dict.json', 'r', encoding='utf-8') as f:
-        crit_dict = json.load(f)
+    if config.data_src == '7_CRIME':
+        crit_path = config.Seven_crit_dict_path
+    else:
+        crit_path = config.ALL_crit_dict_path
+
+    with open(crit_path, 'r', encoding='utf-8') as f:
+            crit_dict = json.load(f)
+
     Process(config,crit_dict)
 
 if __name__ == "__main__":

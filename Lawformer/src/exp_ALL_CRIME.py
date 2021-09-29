@@ -15,7 +15,7 @@ from model import Lawformer_Model
 from data import Data
 from tqdm import tqdm
 import random
-from utils import metrics, F1_each_Label
+from utils import metrics, F1_each_Label, KFold
 
 def isNaN(a):
     return a != a
@@ -34,16 +34,15 @@ class Exp_Dataset(Dataset):
 class Label_Infer():
     def __init__(self, config):
         self.config = config
-        with open(config.crit_dict_path, 'r', encoding='utf-8') as f:
-            crit_dict = json.load(f) 
         self.model = Lawformer_Model(config)
         self.model = nn.DataParallel(self.model)
         print('start loading')
-        if config.model_name == 'lawformer':
-            self.model.load_state_dict(torch.load('../models/2021-08-20-17:15:21.bin'))
-        else:
-            self.model.load_state_dict(torch.load('../models/wwm_bert.bin'))
-
+        
+        #if config.model_name == 'lawformer':
+        #    self.model.load_state_dict(torch.load('../models/2021-08-20-17:15:21.bin'))
+        #else:
+        #    self.model.load_state_dict(torch.load('../models/wwm_bert.bin'))
+        
         self.model = self.model.cuda()
         print('end loading')
         self.Processor = Data(config,config)
@@ -91,144 +90,165 @@ def pre_process(config):
         "主观":2,
         "结果":3,
     }
-    with open('../data/crit_dict.json','r',encoding='utf-8') as f:
+
+
+    with open(config.Seven_crit_dict_path,'r',encoding='utf-8') as f:
         crit_dict = json.load(f)
     with open('../../Labeled_dataset.json','r',encoding='utf-8') as f:
         Cases = json.load(f)
-    random.shuffle(Cases)
-    Tensor_List = []
-    Label_List = []
-    Crim_List = []
+    #random.shuffle(Cases)
     Infer_Model = Label_Infer(config)
     print(len(Cases))
-    for case in tqdm(Cases):
-        text = case['text']
-        encoded_tensor,tokens_sent_pos = Infer_Model.encode(text,case['sub_sent_pos'])
-        for i in range(len(tokens_sent_pos)):
-            span = tokens_sent_pos[i]
-            start = span[0]
-            end = span[1] + 1
-            if start >= 512 or end >= 512:
-                continue
-            Crim_List.append(crit_dict[case['charge']])
 
-            if config.pooling == 'mean':
-                t = torch.mean(encoded_tensor[start:end],dim=0).cpu()
-                if isNaN(t[0]):
-                    print(start," ", end)
-                    print(case['text'][start:end])
-                    print('flag')
-                    print(encoded_tensor[start:end])
-                    print(len(encoded_tensor))
+    Tensor_List_K = []
+    Label_List_K = []
+    Crim_List_K = []    
+    Neuro_analysis_Cases = [] #用于存储可用于神经元分析的数据，包括每个文档的句子嵌入，句文本，句标签，文档罪名
+    Datas = KFold(Cases,config.fold_num)
+    for Indexs in Datas:
+        Tensor_List = []
+        Label_List = []
+        Crim_List = []
+        for index in Indexs:
+            case = Cases[index]
+            text = case['text']        
+            Neuro_case = {}
+            encoded_tensor,tokens_sent_pos = Infer_Model.encode(text,case['sub_sent_pos'])
+            Neuro_sents = []
+            for i in range(len(tokens_sent_pos)):
+                span = tokens_sent_pos[i]
+                start = span[0]
+                end = span[1] + 1
+                if start >= 512 or end >= 512:
+                    continue
+                Crim_List.append(crit_dict[case['charge']])
 
+                if config.pooling == 'mean':
+                    t = torch.mean(encoded_tensor[start:end],dim=0).cpu()
+                    if isNaN(t[0]):
+                        print(start," ", end)
+                        print(case['text'][start:end])
+                        print('flag')
+                        print(encoded_tensor[start:end])
+                        print(len(encoded_tensor))
+                    t = torch.mean(encoded_tensor[start:end],dim=0).cpu().tolist()
+                elif config.pooling == 'max':
+                    t = torch.max(encoded_tensor[start:end],dim=0)[0].cpu().tolist()
+                else:
+                    t = torch.mean(encoded_tensor[start:end],dim=1).cpu().tolist()
+                Tensor_List.append(t)
+                
+                item = case['sub_sent_tag'][i]
+                Label = [0 for i in range(4)]
+                for l in item:
+                    Label[element_dict[l]] = 1
+                #if len(item) == 0:
+                #    Label[4] = 1
+                Label_List.append(Label)
+                Neuro_sents.append({"text":text[case['sub_sent_pos'][i][0]:case['sub_sent_pos'][i][1] + 1],"label":Label,"vector":t})
+            Neuro_case['sents'] = Neuro_sents
+            Neuro_case['crim'] = crit_dict[case['charge']]
+            Neuro_analysis_Cases.append(Neuro_case)
+        Tensor_List_K.append(Tensor_List)
+        Label_List_K.append(Label_List)
+        Crim_List_K.append(Crim_List)
+    KFold_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature +  '_Exp_KFold.json'
+    with open(KFold_file_path,'w',encoding='utf-8') as f:
+        json.dump([Tensor_List_K,Label_List_K, Crim_List_K],f,indent=4,ensure_ascii=False)
 
-                Tensor_List.append(torch.mean(encoded_tensor[start:end],dim=0).cpu().tolist())
-            elif config.pooling == 'max':
-                Tensor_List.append(torch.max(encoded_tensor[start:end],dim=0)[0].cpu().tolist())
-            else:
-                Tensor_List.append(torch.mean(encoded_tensor[start:end],dim=1).cpu().tolist())
-
-            item = case['sub_sent_tag'][i]
-            Label = [0 for i in range(4)]
-            for l in item:
-                Label[element_dict[l]] = 1
-            #if len(item) == 0:
-            #    Label[4] = 1
-            Label_List.append(Label)
-        '''
-        sentence_num = len(Tensor_List)
-        if sentence_num < 72:
-            Tensor_List += [torch.zeros(config.bert_hidden_size,dtype=torch.float)] * (72 - sentence_num)
-            Label_List += [[0 for i in range(len(element_dict))]] * (72 - sentence_num)
-        '''
-    #Tensor_List = torch.stack(Tensor_List,0).cpu().tolist()
-    exp_sent_num = len(Tensor_List)
-    train_index = int(0.8 * exp_sent_num)
-    print(exp_sent_num)
-    train_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_train.json'
-    test_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_test.json'
-    
-    with open(train_file_path,'w',encoding='utf-8') as f:
-        json.dump([Tensor_List[:train_index],Label_List[:train_index], Crim_List[:train_index]],f,indent=4,ensure_ascii=False)
-    with open(test_file_path,'w',encoding='utf-8') as f:
-        json.dump([Tensor_List[train_index:],Label_List[train_index:], Crim_List[train_index:]],f,indent=4,ensure_ascii=False)
+    Neuro_file_path =  '../data/Neuro_' + config.model_name + '_' + config.elements_feature + '.json'
+    with open(Neuro_file_path,'w',encoding='utf-8') as f:
+        json.dump(Neuro_analysis_Cases,f,indent=4,ensure_ascii=False)
 
 def exp_train(config):
-    train_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_train.json'
-    test_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature + '_' + 'Exp_test.json'
+    KFold_file_path = '../data/AllCrimes_' + config.model_name + '_' + config.elements_feature +  '_Exp_KFold.json'
     out_model_path =  '../models/' + config.model_name + '_' + config.elements_feature + '_exp_model.bin'
-    print(train_file_path)
-    with open(train_file_path,'r',encoding='utf-8') as f:
-        train_data = json.load(f)
-    with open(test_file_path,'r',encoding='utf-8') as f:
-        test_data = json.load(f)
-    trainset = Exp_Dataset(*train_data)
-    testset = Exp_Dataset(*test_data)
-    print('dataset loaded')
-    Model = Classify_Model(config).cuda()
-    for name, param in Model.named_parameters():
-        print(name,' ', param.size())
+    with open(KFold_file_path,'r',encoding='utf-8') as f:
+        Datas = json.load(f)
+    K_Fold_m1 = 0.0
+    for Index in range(config.fold_num):
+        test_Tensor, test_Label, test_Crime = [], [], []
+        train_Tensor, train_Label, train_Crime = [], [], []
+        for i in range(config.fold_num):
+            if i != Index:
+                train_Tensor += Datas[0][i]
+                train_Label += Datas[1][i]
+                train_Crime += Datas[2][i]   
+            else:
+                test_Tensor += Datas[0][Index]
+                test_Label += Datas[1][Index]
+                test_Crime += Datas[2][Index]  
+        trainset = Exp_Dataset(train_Tensor, train_Label, train_Crime)
+        testset = Exp_Dataset(test_Tensor, test_Label, test_Crime)
+        print('dataset loaded')
+        Model = Classify_Model(config).cuda()
+        for name, param in Model.named_parameters():
+            print(name,' ', param.size())
 
-    train_sampler = RandomSampler(trainset)
-    data_loader = {
-        'train': DataLoader(
-            trainset, sampler=train_sampler, batch_size=config.batch_size),
-        'test': DataLoader(
-            testset, batch_size=config.batch_size, shuffle=False),
-    }
-    Model.zero_grad()
-    Model.train()
-    optimizer = AdamW(Model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-
-    num_train_optimization_steps = int(len(data_loader['train']) / config.batch_size) * config.epochs
-    if config.warmup_steps < 1:
-        num_warmup_steps = num_train_optimization_steps * config.warmup_steps  # 比例
-    else:
-        num_warmup_steps = config.warmup_steps
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=num_warmup_steps,
-        num_training_steps=num_train_optimization_steps, )
-
-    #optimizer = torch.optim.Adam(Model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    best_model_state_dict, best_valid_mif1 = None, 0
-
-    print('start training')
-    for epoch in range(config.epochs):
+        train_sampler = RandomSampler(trainset)
+        data_loader = {
+            'train': DataLoader(
+                trainset, sampler=train_sampler, batch_size=config.batch_size),
+            'test': DataLoader(
+                testset, batch_size=config.batch_size, shuffle=False),
+        }
+        Model.zero_grad()
         Model.train()
-        for step, batch in enumerate(data_loader['train']):
-            regularization_loss = 0
-            for param in Model.parameters():
-                regularization_loss += torch.sum(abs(param))
-            loss = Model(*batch[:-1],mode='train') + 3e-5 * regularization_loss
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(Model.parameters(), config.max_grad_norm)
-            optimizer.step()
-            scheduler.step()  # Update learning rate schedule
-            optimizer.zero_grad()
+        optimizer = AdamW(Model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
-            if (step % 1000 == 0):
-                print(step, " loss: ", loss.detach().item())
-                
-        mi_f1  = exp_evaluate_multi_label(Model, data_loader['test'],config)
-        if mi_f1 > best_valid_mif1:
-            best_model_state_dict = deepcopy(Model.state_dict())
-            best_valid_mif1 = mi_f1
-            torch.save(Model.state_dict(), out_model_path)
-            #torch.save(Model.state_dict(), '../models/exp_model.bin')
-        
-    mi_f1  = exp_evaluate_multi_label(Model, data_loader['test'],config)
-    for name, param in Model.named_parameters():
-        if name == 'Classify_layer.weight':
-            for i in range(12):
-                start = i * 768
-                end = (i + 1) * 768
-                t = param[:,start:end].norm()
-                print(i, ' ', t)
-        #print(name,' ', param.size())
+        num_train_optimization_steps = int(len(data_loader['train']) / config.batch_size) * config.epochs
+        if config.warmup_steps < 1:
+            num_warmup_steps = num_train_optimization_steps * config.warmup_steps  # 比例
+        else:
+            num_warmup_steps = config.warmup_steps
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_train_optimization_steps, )
 
-def exp_evaluate_multi_label(model, data_loader,config):
-    with open('../data/crit_dict.json', 'r', encoding='utf-8') as f:
+        #optimizer = torch.optim.Adam(Model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+        best_model_state_dict, best_valid_mif1 = None, 0
+
+        print('start training')
+        for epoch in range(config.epochs):
+            Model.train()
+            for step, batch in enumerate(data_loader['train']):
+                regularization_loss = 0
+                for param in Model.parameters():
+                    regularization_loss += torch.sum(abs(param))
+                    break
+                loss = Model(*batch[:-1],mode='train') + 3e-5 * regularization_loss
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(Model.parameters(), config.max_grad_norm)
+                optimizer.step()
+                scheduler.step()  # Update learning rate schedule
+                optimizer.zero_grad()
+
+                if (step % 1000 == 0):
+                    print(step, " loss: ", loss.detach().item())
+                    
+            mi_f1  = exp_evaluate_multi_label(Model, data_loader['test'],False, config)
+            if mi_f1 > best_valid_mif1:
+                best_model_state_dict = deepcopy(Model.state_dict())
+                best_valid_mif1 = mi_f1
+                torch.save(Model.state_dict(), out_model_path)
+                #torch.save(Model.state_dict(), '../models/exp_model.bin')
+        Model.load_state_dict(best_model_state_dict)  
+        mi_f1  = exp_evaluate_multi_label(Model, data_loader['test'],True, config)
+        K_Fold_m1 += mi_f1
+        for name, param in Model.named_parameters():
+            if name == 'Classify_layer.weight':
+                for i in range(12):
+                    start = i * 768
+                    end = (i + 1) * 768
+                    t = param[:,start:end].norm()
+                    print(i, ' ', t)
+            #print(name,' ', param.size())
+
+    print(K_Fold_m1/config.fold_num)
+
+def exp_evaluate_multi_label(model, data_loader, Print, config):
+    with open(config.Seven_crit_dict_path, 'r', encoding='utf-8') as f:
         crit_dict = json.load(f) 
     predict_labels = []
     golden_labels = []
@@ -248,9 +268,9 @@ def exp_evaluate_multi_label(model, data_loader,config):
             crim = crims[i]
             crim_predict_labels[crim].append(predict[i])
             crim_golden_labels[crim].append(labels[i])
-    mi_f1 = metrics(golden_labels,predict_labels, name='全部罪名')
+    mi_f1 = metrics(golden_labels,predict_labels, Print, name='全部罪名')
     for key in crit_dict.keys():
-        metrics(crim_golden_labels[crit_dict[key]],crim_predict_labels[crit_dict[key]], name=key)
+        metrics(crim_golden_labels[crit_dict[key]],crim_predict_labels[crit_dict[key]], Print, name=key)
     return mi_f1
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 {
-    "crit_dict_path": "../data/ALL_CRIME_crit_dict.json",
+    "data_src": "7_CRIME",
+    "ALL_crit_dict_path": "../data/ALL_CRIME_crit_dict.json",
+    "Seven_crit_dict_path": "../data/7_CRIME_crit_dict.json",  
     "label_num":193,
     "max_para_length":512,
     "fold_num":5,
-    "model_name": "bert",
+    "model_name": "lawformer",
     "lawformer_model_path":"../../../RESOURCE/lawformer",
     "bert_model_path":"../../../RESOURCE/chinese_wwm_ext_pytorch",
     "vocab_path":"../../../RESOURCE/chinese_wwm_ext_pytorch/vocab.txt",
@@ -17,5 +19,5 @@
     "max_grad_norm":1e-3,
     "pooling":"mean",
     "threshold":0.5,
-    "elements_feature":"last_layer"
+    "elements_feature":"all_layers"
 }

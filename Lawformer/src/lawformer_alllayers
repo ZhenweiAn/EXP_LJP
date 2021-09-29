@@ -1,0 +1,26 @@
+Some weights of the model checkpoint at ../../../RESOURCE/lawformer were not used when initializing LongformerModel: ['lm_head.decoder.weight', 'lm_head.dense.bias', 'lm_head.bias', 'lm_head.layer_norm.weight', 'lm_head.decoder.bias', 'lm_head.dense.weight', 'lm_head.layer_norm.bias']
+- This IS expected if you are initializing LongformerModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing LongformerModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of LongformerModel were not initialized from the model checkpoint at ../../../RESOURCE/lawformer and are newly initialized: ['longformer.pooler.dense.weight', 'longformer.pooler.dense.bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+start loading
+end loading
+681
+681
+133
+133
+133
+133
+149
+Traceback (most recent call last):
+  File "exp_ALL_CRIME.py", line 288, in <module>
+    exp_train(config)
+  File "exp_ALL_CRIME.py", line 167, in exp_train
+    Datas = json.load(f)
+  File "/home/azw/anaconda3/envs/torch/lib/python3.8/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/home/azw/anaconda3/envs/torch/lib/python3.8/json/__init__.py", line 357, in loads
+    return _default_decoder.decode(s)
+  File "/home/azw/anaconda3/envs/torch/lib/python3.8/json/decoder.py", line 340, in decode
+    raise JSONDecodeError("Extra data", s, end)
+json.decoder.JSONDecodeError: Extra data: line 132249638 column 11 (char 4890931577)

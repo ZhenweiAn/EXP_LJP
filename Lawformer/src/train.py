@@ -89,20 +89,27 @@ class Trainer():
                 best_model_state_dict = deepcopy(self.model.state_dict())
                 best_valid_mif1 = mi_f1
                 #data_time = time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())
-                model_path = os.path.join(self.config.model_dir, 'wwm_bert.bin')
+                if self.config.model_name == 'bert':
+                    model_path = os.path.join(self.config.model_dir, 'wwm_bert.bin')
+                else:
+                    model_path = os.path.join(self.config.model_dir, 'lawformer.bin')
+
                 torch.save(self.model.state_dict(), model_path)
 
         return best_model_state_dict
 
 
 def main(config):
-    with open('../data/ALL_CRIME_train.json','r',encoding='utf-8') as f:
+    if config.data_src == "7_CRIME":
+        data_src = "7_CRIME"
+    else:
+        data_src = "ALL_CRIME"
+    with open('../data/ ' + data_src + '_train.json','r',encoding='utf-8') as f:
         train_data = json.load(f)
-    with open('../data/ALL_CRIME_valid.json','r',encoding='utf-8') as f:
+    with open('../data/ ' + data_src + '_valid.json','r',encoding='utf-8') as f:
         valid_data = json.load(f)
-    with open('../data/ALL_CRIME_test.json','r',encoding='utf-8') as f:
-        test_data = json.load(f)
-    train_dataset = MyDataset(*train_data)
+    with open('../data/ ' + data_src + '_test.json','r',encoding='utf-8') as f:
+        test_data = json.load(f)train_dataset = MyDataset(*train_data)
     dev_dataset = MyDataset(*valid_data)
     test_dataset = MyDataset(*test_data)
     print('Datasets loaded')
@@ -131,19 +138,18 @@ def main(config):
     model.load_state_dict(best_model_state_dict)
     
     print("this is test")
-    mi_f1, ma_f1, mi_precision, mi_recall = evaluate(self.model, self.data_loader['test'], self.config)
+    mi_f1 = evaluate(self.model, self.data_loader['test'], self.config)
 
-
-
-    #data_time = time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())
-    #model_path = os.path.join(config.model_dir,  'wwm_bert.bin')
-    #torch.save(model.state_dict(), model_path)
 
 
 
 def evaluate(model, data_loader,config):
-    with open('../data/ALL_CRIME_crit_dict.json','r',encoding='utf-8') as f:
-        crit_dict = json.load(f)
+    if config.data_src == '7_CRIME':
+        crit_path = config.Seven_crit_dict_path
+    else:
+        crit_path = config.ALL_crit_dict_path
+    with open(crit_path, 'r', encoding='utf-8') as f:
+            crit_dict = json.load(f)
     predict_labels = []
     golden_labels = []
     model.eval()
@@ -155,7 +161,7 @@ def evaluate(model, data_loader,config):
         predict = predict.detach().cpu().numpy().tolist()
         golden_labels += labels
         predict_labels += predict
-    mi_f1, ma_f1,  precision, recall = metrics(golden_labels,predict_labels,'全部罪名')
+    mi_f1 = metrics(golden_labels,predict_labels,'全部罪名')
     target_names=["交通肇事","抢劫","抢夺","过失致人死亡","贪污","挪用公款","挪用资金"]
     index = np.array([i for i in range(len(crit_dict))])
     t = classification_report(golden_labels, predict_labels, zero_division = 1, labels = index, target_names=list(crit_dict.keys()),output_dict=True)
@@ -165,7 +171,7 @@ def evaluate(model, data_loader,config):
     index_names = [t.ljust(6,' ')for t in target_names]
     df = pd.DataFrame(selected_report,index=index_names,dtype=float)
     print(df)
-    return mi_f1,ma_f1,  precision, recall
+    return mi_f1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

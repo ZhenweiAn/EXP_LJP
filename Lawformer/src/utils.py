@@ -1,19 +1,22 @@
 import numpy as np
-from sklearn.metrics import f1_score, precision_score, recall_score, classification_report 
+from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, accuracy_score 
 import pandas as pd
-
-def metrics(golden_labels, predict_labels, name='罪名'):
+from collections import defaultdict
+def metrics(golden_labels, predict_labels, Print=False, name='罪名'):
     golden_labels = np.array(golden_labels)
     predict_labels = np.array(predict_labels)
     mi_f1 = f1_score(golden_labels,predict_labels, average='micro')
     ma_f1 = f1_score(golden_labels,predict_labels, average='macro')
+    Acc = accuracy_score(golden_labels,predict_labels)
     precision = precision_score(golden_labels,predict_labels, average = 'micro')
     recall = recall_score(golden_labels,predict_labels, average = 'micro')
-    print('------',name,'------')
-    print("mi_f1: ",mi_f1)
-    print("ma_f1: ",ma_f1)
-    print("mi_precision: ",precision)
-    print("mi_recall: ",recall)
+    if Print:
+        print('------',name,'------')
+        print('Acc: ', Acc)
+        print("mi_f1: ",mi_f1)
+        print("ma_f1: ",ma_f1)
+        print("mi_precision: ",precision)
+        print("mi_recall: ",recall)
     #F1_each_Label(golden_labels,predict_labels,config)
   
     return mi_f1
@@ -38,6 +41,35 @@ def F1_each_Label(golden_labels, predict_labels):
         print(t)
     return f1_s
 
+
+'''将要件预测数据集中的案例按照罪名分为K折'''
+def KFold(Cases, k):
+    Crim_dict = defaultdict(list)
+    for i in range(len(Cases)):
+        case = Cases[i]
+        charge = case['charge']
+        Crim_dict[charge].append(i)
+    datas = []
+    not_available_index = []
+    cnt = 0
+    for i in range(k):
+        piece_index = []
+        for crime, case_list in Crim_dict.items():
+            piece_len = int(len(case_list) / k)
+            start_index = piece_len * i
+            for j in case_list[start_index:start_index + piece_len]:
+                if j in not_available_index:
+                    continue
+                not_available_index.append(j)
+                piece_index.append(j)
+        datas.append(piece_index)
+    for i in range(len(Cases)):
+        if i not in not_available_index:
+            datas[k - 1].append(i)
+    print(len(Cases))
+    for d in datas:
+        print(len(d))
+    return datas
 
 
 if __name__ == "__main__":
